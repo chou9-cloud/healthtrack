@@ -207,7 +207,7 @@ function selMood(btn, emoji, label) {
   saveState();
 }
 
-// ── Manual Meal Entry ────────────────────────────────
+// ── Paste & Parse AI Response ────────────────────────
 function copyPrompt() {
   const text = document.getElementById('promptText').textContent;
   navigator.clipboard.writeText(text).then(() => {
@@ -215,29 +215,117 @@ function copyPrompt() {
     btn.innerHTML = '<i class="ti ti-check"></i> 已複製！';
     btn.classList.add('copied');
     setTimeout(() => {
-      btn.innerHTML = '<i class="ti ti-copy"></i> 複製';
+      btn.innerHTML = '<i class="ti ti-copy"></i> 複製提示語';
       btn.classList.remove('copied');
     }, 2000);
   });
 }
 
-function addManualMeal() {
-  const cal = parseInt(document.getElementById('mealCalInput').value);
-  const name = document.getElementById('mealNameInput').value.trim() || '餐點';
-  if (!cal || cal <= 0) {
-    alert('請先輸入卡路里數字！');
-    return;
+function parseAIResponse() {
+  const text = document.getElementById('aiPasteInput').value.trim();
+  if (!text) { alert('請先貼上 Claude 的回覆！'); return; }
+
+  const foods = [];
+  let total = 0;
+
+  // Parse lines like "- 雞腿飯：650 kcal" or "雞腿飯 650kcal" or "雞腿飯(650)"
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Skip total line — we'll sum ourselves
+    if (/總計|total|合計/i.test(trimmed)) continue;
+
+    // Match number in line
+    const numMatch = trimmed.match(/(\d+)\s*(?:kcal|卡|大卡|cal)?/i);
+    if (!numMatch) continue;
+
+    const cal = parseInt(numMatch[1]);
+    if (cal < 5 || cal > 3000) continue; // filter out noise
+
+    // Extract food name: remove bullets, colons, numbers, units
+    let name = trimmed
+      .replace(/^[-•*]\s*/, '')
+      .replace(/[：:]\s*\d+.*$/, '')
+      .replace(/\d+\s*(?:kcal|卡|大卡|cal)?/gi, '')
+      .replace(/[()（）\[\]]/g, '')
+      .trim();
+
+    if (!name) name = '食物';
+    foods.push({ name, cal });
+    total += cal;
   }
+
+  // If nothing parsed, try to find any number as total
+  if (!foods.length) {
+    const nums = text.match(/\d+/g);
+    if (nums) {
+      total = parseInt(nums[nums.length - 1]);
+      foods.push({ name: '餐點（自動偵測）', cal: total });
+    }
+  }
+
+  if (!foods.length) { alert('無法解析內容，請確認格式或直接輸入數字。'); return; }
+
+  // Render parsed result
+  window._parsedFoods = foods;
+  window._parsedTotal = total;
+
+  document.getElementById('parsedList').innerHTML = foods.map((f, i) => `
+    <div class="food-item">
+      <span>${f.name}</span>
+      <span class="food-kcal" id="pcal-${i}" onclick="editParsed(${i})" style="cursor:pointer;border-bottom:1px dashed #93C5FD" title="點擊修改">${f.cal} kcal</span>
+    </div>`).join('');
+  document.getElementById('parsedTotal').textContent = total + ' kcal';
+  document.getElementById('parsedCard').classList.add('show');
+  document.getElementById('parsedCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function editParsed(idx) {
+  const el = document.getElementById('pcal-' + idx);
+  const old = window._parsedFoods[idx].cal;
+  el.outerHTML = `<span><input type="number" id="pedit-${idx}" value="${old}" style="width:60px;border:0.5px solid #93C5FD;border-radius:4px;padding:2px 6px;font-size:13px" inputmode="numeric"> kcal <button onclick="saveParsed(${idx})" style="background:#2563EB;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px">存</button></span>`;
+}
+
+function saveParsed(idx) {
+  const newCal = parseInt(document.getElementById('pedit-' + idx).value) || 0;
+  window._parsedFoods[idx].cal = newCal;
+  window._parsedTotal = window._parsedFoods.reduce((a, f) => a + f.cal, 0);
+  document.getElementById('parsedTotal').textContent = window._parsedTotal + ' kcal';
+  document.getElementById('parsedList').innerHTML = window._parsedFoods.map((f, i) => `
+    <div class="food-item">
+      <span>${f.name}</span>
+      <span class="food-kcal" id="pcal-${i}" onclick="editParsed(${i})" style="cursor:pointer;border-bottom:1px dashed #93C5FD" title="點擊修改">${f.cal} kcal</span>
+    </div>`).join('');
+}
+
+function addParsedMeal() {
+  if (!window._parsedFoods || !window._parsedFoods.length) { alert('請先解析 AI 回覆！'); return; }
+  const name = document.getElementById('mealNameInput').value.trim() || '餐點';
+  const total = window._parsedTotal;
+  S.calories += total;
+  if (!S.mealLogs) S.mealLogs = [];
+  S.mealLogs.push({ t: now(), name, cal: total, foods: window._parsedFoods });
+  saveState(); updateDash(); renderMealLog();
+  // Reset
+  document.getElementById('aiPasteInput').value = '';
+  document.getElementById('mealNameInput').value = '';
+  document.getElementById('parsedCard').classList.remove('show');
+  window._parsedFoods = null;
+  // Feedback
+  const btn = document.querySelector('#parsedCard .full-btn');
+  showPage('dashboard');
+}
+
+function addManualMeal() {
+  const cal = parseInt(document.getElementById('mealCalInput') && document.getElementById('mealCalInput').value);
+  const name = document.getElementById('mealNameInput') && document.getElementById('mealNameInput').value.trim() || '餐點';
+  if (!cal || cal <= 0) { alert('請先輸入卡路里數字！'); return; }
   S.calories += cal;
   if (!S.mealLogs) S.mealLogs = [];
   S.mealLogs.push({ t: now(), name, cal });
-  document.getElementById('mealCalInput').value = '';
-  document.getElementById('mealNameInput').value = '';
   saveState(); updateDash(); renderMealLog();
-  // Show success feedback
-  const btn = document.querySelector('#page-meal .full-btn');
-  btn.innerHTML = '<i class="ti ti-check"></i> 已加入！';
-  setTimeout(() => { btn.innerHTML = '<i class="ti ti-check"></i> 加入今日記錄'; }, 1500);
 }
 
 function renderMealLog() {
@@ -246,9 +334,10 @@ function renderMealLog() {
     el.innerHTML = '<p style="font-size:13px;color:#94A3B8;text-align:center;padding:8px">尚未記錄任何餐點</p>';
     return;
   }
-  el.innerHTML = S.mealLogs.slice(-8).reverse()
-    .map(e => `<div class="log-ent"><span>${e.t} ${e.name}</span><span class="log-v">${e.cal} kcal</span></div>`)
-    .join('');
+  el.innerHTML = S.mealLogs.slice(-8).reverse().map(e => `
+    <div class="log-ent"><span>${e.t} ${e.name}</span><span class="log-v">${e.cal} kcal</span></div>
+    ${e.foods ? e.foods.map(f => `<div class="log-ent" style="padding-left:12px;opacity:0.6"><span>　${f.name}</span><span>${f.cal} kcal</span></div>`).join('') : ''}
+  `).join('');
 }
 
 // ── Chart ─────────────────────────────────────────────
