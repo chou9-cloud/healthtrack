@@ -111,51 +111,57 @@
       <div id="page-meal" class="page">
         <p class="sec-title">AI 餐點分析</p>
 
-        <!-- API Key input -->
-        <div id="apiKeySection" class="api-key-section">
-          <div class="api-key-card">
-            <div class="api-key-header"><i class="ti ti-key"></i> 設定 Anthropic API Key</div>
-            <p class="api-key-desc">AI 餐點分析需要 Anthropic API Key。<a href="https://console.anthropic.com/" target="_blank">前往取得免費 API Key →</a></p>
-            <div class="inp-row" style="margin-top:10px">
-              <input type="password" id="apiKeyInput" placeholder="sk-ant-..." style="font-family:monospace">
-              <button class="log-btn" onclick="saveApiKey()">儲存</button>
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <div class="step-title">用 Claude.ai 分析餐點照片</div>
+            <p class="step-desc">點下方按鈕開啟 Claude.ai，上傳餐點照片，AI 會幫你分析卡路里</p>
+            <a href="https://claude.ai" target="_blank" class="claude-btn">
+              <i class="ti ti-external-link"></i> 開啟 Claude.ai 分析
+            </a>
+            <div class="prompt-box">
+              <div class="prompt-label"><i class="ti ti-copy"></i> 複製這段提示語貼給 Claude：</div>
+              <div class="prompt-text" id="promptText">請分析這張餐點照片的食物內容與卡路里，列出每道食物名稱和熱量，最後告訴我總卡路里是多少。</div>
+              <button class="copy-btn" onclick="copyPrompt()"><i class="ti ti-copy"></i> 複製</button>
             </div>
-            <p id="apiKeyStatus" style="font-size:12px;margin-top:6px;color:#16A34A;display:none">✓ API Key 已儲存</p>
           </div>
         </div>
 
-        <div class="upload-area" onclick="document.getElementById('imgInput').click()">
-          <i class="ti ti-camera-plus"></i>
-          <p>點擊拍照或上傳餐點照片</p>
-          <p class="upload-hint">支援 JPG、PNG，建議光線充足、拍清楚食物</p>
-          <input type="file" id="imgInput" accept="image/*" onchange="handleImage(event)" capture="environment">
-        </div>
-
-        <img id="prevImg" class="prev-img" alt="餐點預覽">
-
-        <div class="ai-load" id="aiLoad">
-          <i class="ti ti-loader spin"></i>
-          <p>AI 正在仔細辨識食物種類與份量...</p>
-        </div>
-
-        <div class="low-conf" id="lowConf">
-          <i class="ti ti-alert-triangle"></i> AI 對部分食物辨識信心較低，建議點擊食物名稱確認修正
-        </div>
-
-        <div class="ai-card" id="aiCard">
-          <div class="ai-hd"><i class="ti ti-robot"></i> AI 分析結果</div>
-          <div id="foodList"></div>
-          <div class="ai-total">
-            <span>總熱量</span>
-            <span id="aiTotal" class="food-kcal"></span>
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <div class="step-title">輸入 Claude 回覆的卡路里</div>
+            <p class="step-desc">Claude 分析完後，把總卡路里數字填入下方</p>
+            <div class="inp-row" style="margin-top:10px">
+              <input type="number" id="mealCalInput" placeholder="例如：650" inputmode="numeric" style="font-size:18px;font-weight:500">
+              <span style="font-size:14px;color:#64748B;white-space:nowrap">kcal</span>
+            </div>
+            <div class="inp-row" style="margin-top:8px">
+              <input type="text" id="mealNameInput" placeholder="餐點備註（選填，例如：午餐便當）">
+            </div>
           </div>
-          <div class="ai-note" id="aiNote"></div>
-          <div class="ai-edit-hint">
-            <i class="ti ti-edit"></i> 辨識有誤？點擊食物名稱可直接修改
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <div class="step-title">加入今日記錄</div>
+            <p class="step-desc">確認卡路里後加入紀錄，自動更新今日進度</p>
+            <button class="log-btn full-btn" onclick="addManualMeal()" style="margin-top:10px">
+              <i class="ti ti-check"></i> 加入今日記錄
+            </button>
           </div>
-          <button class="log-btn full-btn" onclick="addMealToLog()">
-            <i class="ti ti-check"></i> 加入今日記錄
-          </button>
+        </div>
+
+        <!-- 今日餐點記錄 -->
+        <p class="sec-title" style="margin-top:1.5rem">今日餐點記錄</p>
+        <div class="quick-log">
+          <div class="log-hist" id="mealLog">
+            <p style="font-size:13px;color:#94A3B8;text-align:center;padding:8px">尚未記錄任何餐點</p>
+          </div>
         </div>
       </div>
 

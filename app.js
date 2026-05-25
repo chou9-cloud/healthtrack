@@ -207,161 +207,48 @@ function selMood(btn, emoji, label) {
   saveState();
 }
 
-// ── AI Meal Analysis ──────────────────────────────────
-function handleImage(ev) {
-  const file = ev.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const img = document.getElementById('prevImg');
-    img.src = e.target.result;
-    img.style.display = 'block';
-    document.getElementById('aiCard').classList.remove('show');
-    document.getElementById('lowConf').classList.remove('show');
-    document.getElementById('aiLoad').style.display = 'block';
-    // Compress image before sending
-    const compressed = await compressImage(e.target.result);
-    await analyzeImage(compressed);
-  };
-  reader.readAsDataURL(file);
-}
-
-function compressImage(dataUrl) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const MAX = 1024;
-      let w = img.width, h = img.height;
-      if (w > MAX || h > MAX) {
-        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-        else       { w = Math.round(w * MAX / h); h = MAX; }
-      }
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
-    };
-    img.src = dataUrl;
+// ── Manual Meal Entry ────────────────────────────────
+function copyPrompt() {
+  const text = document.getElementById('promptText').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.innerHTML = '<i class="ti ti-check"></i> 已複製！';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.innerHTML = '<i class="ti ti-copy"></i> 複製';
+      btn.classList.remove('copied');
+    }, 2000);
   });
 }
 
-async function analyzeImage(b64) {
-  const apiKey = localStorage.getItem('ht_apikey') || '';
-  if (!apiKey) {
-    document.getElementById('aiLoad').style.display = 'none';
-    alert('請先在「餐點」頁面上方設定 Anthropic API Key');
+function addManualMeal() {
+  const cal = parseInt(document.getElementById('mealCalInput').value);
+  const name = document.getElementById('mealNameInput').value.trim() || '餐點';
+  if (!cal || cal <= 0) {
+    alert('請先輸入卡路里數字！');
     return;
   }
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1200,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } },
-            { type: 'text', text: `你是一位專業的台灣營養師，請仔細觀察這張食物照片。
+  S.calories += cal;
+  if (!S.mealLogs) S.mealLogs = [];
+  S.mealLogs.push({ t: now(), name, cal });
+  document.getElementById('mealCalInput').value = '';
+  document.getElementById('mealNameInput').value = '';
+  saveState(); updateDash(); renderMealLog();
+  // Show success feedback
+  const btn = document.querySelector('#page-meal .full-btn');
+  btn.innerHTML = '<i class="ti ti-check"></i> 已加入！';
+  setTimeout(() => { btn.innerHTML = '<i class="ti ti-check"></i> 加入今日記錄'; }, 1500);
+}
 
-分析步驟：
-1. 先描述你看到的食物外觀特徵（顏色、形狀、烹調方式）
-2. 根據外觀特徵辨識食物，不要猜測
-3. 估算每種食物的份量與熱量（以台灣常見份量為準）
-
-辨識規則：
-- 看到白色/淡色片狀魚肉、魚刺、魚皮 → 辨識為魚（不要說成雞肉）
-- 看到有骨頭豬肉 → 辨識為排骨
-- 看到深色整塊醬汁肉 → 描述肉的形狀判斷種類
-- confidence：1.0=非常確定，0.8=大致確定，0.6=不確定
-
-只回傳 JSON，不加 markdown 或說明文字：
-{"foods":[{"name":"食物名稱","calories":數字,"confidence":信心分數,"desc":"外觀一句描述"},...],"total":總熱量整數,"suggestion":"針對這餐的具體減重建議（繁體中文，20字內）","overall_confidence":整體信心分數}` }
-          ]
-        }]
-      })
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    const txt = data.content.map(i => i.text || '').join('').replace(/```json|```/g, '').trim();
-    showResult(JSON.parse(txt));
-  } catch (err) {
-    console.error('AI error:', err);
-    showFallback(err.message);
+function renderMealLog() {
+  const el = document.getElementById('mealLog');
+  if (!S.mealLogs || !S.mealLogs.length) {
+    el.innerHTML = '<p style="font-size:13px;color:#94A3B8;text-align:center;padding:8px">尚未記錄任何餐點</p>';
+    return;
   }
-}
-
-function showResult(r) {
-  document.getElementById('aiLoad').style.display = 'none';
-  aiResult = r;
-  pendingCal = r.total;
-  if (r.overall_confidence < 0.75) document.getElementById('lowConf').classList.add('show');
-  renderFoodList();
-  document.getElementById('aiTotal').textContent = r.total + ' kcal';
-  document.getElementById('aiNote').textContent  = '💡 ' + r.suggestion;
-  document.getElementById('aiCard').classList.add('show');
-}
-
-function renderFoodList() {
-  document.getElementById('foodList').innerHTML = aiResult.foods.map((f, i) => `
-    <div class="food-item">
-      <div class="food-name-wrap">
-        <span class="food-name" onclick="editFood(${i})" title="點擊修改">${f.name}</span>
-        ${f.confidence < 0.75 ? '<span class="food-conf-warn">⚠ 不確定</span>' : ''}
-        <span class="food-desc">${f.desc || ''}</span>
-      </div>
-      <span class="food-kcal" id="fcal-${i}">${f.calories} kcal</span>
-    </div>`).join('');
-}
-
-function editFood(idx) {
-  const f = aiResult.foods[idx];
-  const wrap = document.querySelectorAll('.food-item')[idx];
-  wrap.querySelector('.food-name-wrap').innerHTML = `
-    <input type="text"   id="en-${idx}" value="${f.name}"     style="border:0.5px solid #93C5FD;border-radius:4px;padding:3px 7px;font-size:13px;width:120px;margin-right:4px">
-    <input type="number" id="ec-${idx}" value="${f.calories}" style="border:0.5px solid #93C5FD;border-radius:4px;padding:3px 7px;font-size:13px;width:66px" inputmode="numeric">
-    <button onclick="saveFood(${idx})" style="background:var(--blue-600);color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:12px;margin-left:4px">存</button>`;
-}
-
-function saveFood(idx) {
-  const newName = document.getElementById('en-' + idx).value;
-  const newCal  = parseInt(document.getElementById('ec-' + idx).value) || 0;
-  aiResult.foods[idx].name     = newName;
-  aiResult.foods[idx].calories = newCal;
-  aiResult.total = aiResult.foods.reduce((a, f) => a + f.calories, 0);
-  pendingCal = aiResult.total;
-  document.getElementById('aiTotal').textContent = aiResult.total + ' kcal';
-  renderFoodList();
-}
-
-function showFallback(msg) {
-  document.getElementById('aiLoad').style.display = 'none';
-  aiResult = {
-    foods: [
-      { name: '主菜（請修改）', calories: 350, confidence: 0.5, desc: '點擊上方食物名稱修改' },
-      { name: '白飯',           calories: 280, confidence: 0.9, desc: '約一碗' },
-      { name: '配菜（請修改）', calories: 120, confidence: 0.5, desc: '點擊上方食物名稱修改' }
-    ],
-    total: 750, suggestion: '請確認食物名稱後再記錄。', overall_confidence: 0.5
-  };
-  document.getElementById('lowConf').classList.add('show');
-  document.getElementById('lowConf').innerHTML = `<i class="ti ti-alert-circle"></i> AI 分析失敗（${msg || '請確認 API Key'}），已顯示預設數值，請手動修改`;
-  showResult(aiResult);
-}
-
-function addMealToLog() {
-  if (pendingCal > 0) {
-    S.calories += pendingCal;
-    saveState(); updateDash();
-    showPage('dashboard');
-    pendingCal = 0;
-  }
+  el.innerHTML = S.mealLogs.slice(-8).reverse()
+    .map(e => `<div class="log-ent"><span>${e.t} ${e.name}</span><span class="log-v">${e.cal} kcal</span></div>`)
+    .join('');
 }
 
 // ── Chart ─────────────────────────────────────────────
@@ -441,8 +328,6 @@ function init() {
   document.getElementById('today-date').textContent =
     new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
-  loadApiKey();
-
   // Restore goals to settings inputs
   document.getElementById('calGoal').value   = S.calGoal;
   document.getElementById('waterGoal').value = S.waterGoal;
@@ -451,6 +336,7 @@ function init() {
   // Restore today's logs
   renderWaterLog();
   renderWeightLog();
+  renderMealLog();
   if (S.exLogs.length) {
     document.getElementById('exLog').innerHTML =
       S.exLogs.slice(-5).reverse().map(e => `<div class="log-ent"><span>${e.t}</span><span class="log-v">${e.v}</span></div>`).join('');
